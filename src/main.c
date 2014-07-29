@@ -550,6 +550,7 @@ static void print_help(char *prog_name)
 int main(int argc, char *argv[])
 {
 	int error_num, opt;
+	unsigned short flags = VRS_SEC_DATA_NONE;
 
 	if(argc > 0) {
 		/* Parse all options */
@@ -605,7 +606,7 @@ int main(int argc, char *argv[])
 	vrs_register_receive_layer_set_value(cb_receive_layer_set_value);
 
 	/* Send connect request to the server */
-	error_num = vrs_send_connect_request(my_verse_server, "12345", 0, &my_session_id);
+	error_num = vrs_send_connect_request(my_verse_server, "12345", flags, &my_session_id);
 	if(error_num != VRS_SUCCESS) {
 		printf("ERROR: %s\n", vrs_strerror(error_num));
 		return EXIT_FAILURE;
