@@ -36,10 +36,16 @@ set (CMAKE_MODULE_PATH
 set (EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin/)
 
 # Try to find Verse library (required)
-find_package (Verse)
+find_package (Verse REQUIRED)
 
 # Try to find RPLY package (required)
-find_package (RPLY)
+find_package (RPLY REQUIRED)
+
+# Try to find OpenGL
+find_package (OpenGL)
+
+# Try to find GLUT
+find_package (GLUT)
 
 # Set source code of Verse PLY uploader
 set (verse_ply_uploader_src ./src/main.c)
@@ -48,6 +54,8 @@ set (verse_ply_uploader_src ./src/main.c)
 include_directories (./src)
 include_directories (${VERSE_INCLUDE_DIR})
 include_directories (${RPLY_INCLUDE_DIR})
+include_directories (${OPENGL_INCLUDE_DIR})
+include_directories (${GLUT_INCLUDE_DIR})
 
 set ( verse_ply_uploader_libs ${VERSE_LIBRARIES} ${RPLY_LIBRARIES} )
 

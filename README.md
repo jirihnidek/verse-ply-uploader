@@ -9,6 +9,8 @@ to Verse server.
 * CMake http://www.cmake.org/
 * libRPLY https://github.com/jirihnidek/librply
 * Verse https://github.com/verse/verse 
+* OpenGL http://www.opengl.org/  (optional)
+* GLUT http://www.opengl.org/resources/libraries/glut/ (optional)
 
 ## Build
 
@@ -19,6 +21,9 @@ This program can be build using CMake.
     $ cmake ../
     $ make
 
+## Usage
 
+You can start this command line
 
+    $ verse_ply_uploader -f bunny.ply localhost
 
