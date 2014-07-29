@@ -41,10 +41,12 @@
 
 /* Custom type of layer containing vertexes, edges and faces */
 #define LAYER_VERTEXES_CT 0
+/* Custom type of layer containing edges */
 #define LAYER_EDGES_CT    1
+/* Custom type of layer containing faces */
 #define LAYER_QUADS_CT    2
 
-/* Custom type of layer containing faces */
+static int print_debug = 0;
 
 /* My session ID */
 static uint8_t my_session_id = -1;
@@ -140,7 +142,7 @@ static int vertex_cb(p_ply_argument argument)
 	ply_get_argument_user_data(argument, (void**)&vert_num, &xyz);
 	switch(xyz) {
 	case 0:
-		printf("%ld ", *vert_num);
+		/* printf("%ld ", *vert_num); */
 		vertex[0] = ply_get_argument_value(argument);
 		break;
 	case 1:
@@ -148,7 +150,7 @@ static int vertex_cb(p_ply_argument argument)
 		break;
 	case 2:
 		vertex[2] = ply_get_argument_value(argument);
-		printf("(%g, %g, %g)\n", vertex[0], vertex[1], vertex[2]);
+		/* printf("(%g, %g, %g)\n", vertex[0], vertex[1], vertex[2]); */
 		vrs_send_layer_set_value(my_session_id, VRS_DEFAULT_PRIORITY, my_mesh_node_id, my_vertex_layer_id, *vert_num, VRS_VALUE_TYPE_REAL64, 3, (void*)vertex);
 		*vert_num = *vert_num + 1;
 		break;
@@ -174,7 +176,7 @@ static int face_cb(p_ply_argument argument)
 		face_size = length;
 		size = (face_size < 4) ? 4 : face_size;
 		face = (long*)calloc(size, sizeof(long));
-		printf("%ld, %ld, ", *face_num, length);
+		/* printf("%ld, %ld, ", *face_num, length); */
 	}
 
 	if(face != NULL) {
@@ -183,6 +185,7 @@ static int face_cb(p_ply_argument argument)
 
 	/* When last face index is loaded */
 	if(value_index >= 0 && value_index == (face_size - 1)) {
+		/*
 		long i;
 		printf("{");
 		for(i = 0; i < face_size; i++) {
@@ -193,6 +196,7 @@ static int face_cb(p_ply_argument argument)
 			}
 		}
 		printf("}\n");
+		*/
 
 		vrs_send_layer_set_value(my_session_id, VRS_DEFAULT_PRIORITY, my_mesh_node_id, my_face_layer_id, *face_num, VRS_VALUE_TYPE_UINT64, 4, (void*)face);
 
@@ -227,55 +231,57 @@ static void cb_receive_layer_set_value(const uint8_t session_id,
 {
 	int i;
 
-	printf("%s(): session_id: %u, node_id: %u, layer_id: %d, item_id: %d, data_type: %d, count: %d, value(s): ",
-			__FUNCTION__, session_id, node_id, layer_id, item_id, data_type, count);
+	if(print_debug) {
+		printf("%s(): session_id: %u, node_id: %u, layer_id: %d, item_id: %d, data_type: %d, count: %d, value(s): ",
+				__FUNCTION__, session_id, node_id, layer_id, item_id, data_type, count);
 
-	switch(data_type) {
-	case VRS_VALUE_TYPE_UINT8:
-		for(i=0; i<count; i++) {
-			printf("%d, ", ((uint8_t*)value)[i]);
-		}
-		break;
-	case VRS_VALUE_TYPE_UINT16:
-		for(i=0; i<count; i++) {
-			printf("%d, ", ((uint16_t*)value)[i]);
-		}
-		break;
-	case VRS_VALUE_TYPE_UINT32:
-		for(i=0; i<count; i++) {
-			printf("%d, ", ((uint32_t*)value)[i]);
-		}
-		break;
-	case VRS_VALUE_TYPE_UINT64:
-		for(i=0; i<count; i++) {
+		switch(data_type) {
+		case VRS_VALUE_TYPE_UINT8:
+			for(i=0; i<count; i++) {
+				printf("%d, ", ((uint8_t*)value)[i]);
+			}
+			break;
+		case VRS_VALUE_TYPE_UINT16:
+			for(i=0; i<count; i++) {
+				printf("%d, ", ((uint16_t*)value)[i]);
+			}
+			break;
+		case VRS_VALUE_TYPE_UINT32:
+			for(i=0; i<count; i++) {
+				printf("%d, ", ((uint32_t*)value)[i]);
+			}
+			break;
+		case VRS_VALUE_TYPE_UINT64:
+			for(i=0; i<count; i++) {
 #ifdef __APPLE__
-			printf("%llu, ", ((uint64_t*)value)[i]);
+				printf("%llu, ", ((uint64_t*)value)[i]);
 #else
-			printf("%lu, ", ((uint64_t*)value)[i]);
+				printf("%lu, ", ((uint64_t*)value)[i]);
 #endif
+			}
+			break;
+		case VRS_VALUE_TYPE_REAL16:
+			for(i=0; i<count; i++) {
+				/* TODO: convert half-float to float and print it as float value */
+				printf("%x, ", ((uint16_t*)value)[i]);
+			}
+			break;
+		case VRS_VALUE_TYPE_REAL32:
+			for(i=0; i<count; i++) {
+				printf("%6.3f, ", ((float*)value)[i]);
+			}
+			break;
+		case VRS_VALUE_TYPE_REAL64:
+			for(i=0; i<count; i++) {
+				printf("%6.3f, ", ((double*)value)[i]);
+			}
+			break;
+		default:
+			printf("Unknown type");
+			break;
 		}
-		break;
-	case VRS_VALUE_TYPE_REAL16:
-		for(i=0; i<count; i++) {
-			/* TODO: convert half-float to float and print it as float value */
-			printf("%x, ", ((uint16_t*)value)[i]);
-		}
-		break;
-	case VRS_VALUE_TYPE_REAL32:
-		for(i=0; i<count; i++) {
-			printf("%6.3f, ", ((float*)value)[i]);
-		}
-		break;
-	case VRS_VALUE_TYPE_REAL64:
-		for(i=0; i<count; i++) {
-			printf("%6.3f, ", ((double*)value)[i]);
-		}
-		break;
-	default:
-		printf("Unknown type");
-		break;
+		printf("\n");
 	}
-	printf("\n");
 }
 
 /**
@@ -297,8 +303,10 @@ static void cb_receive_layer_create(const uint8_t session_id,
 		const uint8_t count,
 		const uint16_t custom_type)
 {
-	printf("%s(): session_id: %u, node_id: %u, parent_layer_id: %d, layer_id: %d, data_type: %d, count: %d, custom_type: %d\n",
+	if(print_debug) {
+		printf("%s(): session_id: %u, node_id: %u, parent_layer_id: %d, layer_id: %d, data_type: %d, count: %d, custom_type: %d\n",
 			__FUNCTION__, session_id, node_id, parent_layer_id, layer_id, data_type, count, custom_type);
+	}
 
 	if(node_id == my_mesh_node_id && custom_type == LAYER_VERTEXES_CT) {
 		vrs_send_layer_subscribe(session_id, VRS_DEFAULT_PRIORITY, node_id, layer_id, 0, 0);
@@ -321,7 +329,6 @@ static void cb_receive_layer_create(const uint8_t session_id,
 		ply_set_read_cb(ply, "vertex", "y", vertex_cb, &vert_num, 1);
 		ply_set_read_cb(ply, "vertex", "z", vertex_cb, &vert_num, 2);
 		ntriangles = ply_set_read_cb(ply, "face", "vertex_indices", face_cb, &face_num, 0);
-		printf("%ld\n%ld\n", nvertices, ntriangles);
 		if (!ply_read(ply)) return;
 		ply_close(ply);
 	}
@@ -341,8 +348,10 @@ static void cb_receive_node_create(const uint8_t session_id,
 		const uint16_t user_id,
 		const uint16_t custom_type)
 {
-	printf("%s() session_id: %d, node_id: %d, parent_id: %d, user_id: %d, custom_type: %d\n",
+	if(print_debug) {
+		printf("%s() session_id: %d, node_id: %d, parent_id: %d, user_id: %d, custom_type: %d\n",
 			__FUNCTION__, session_id, node_id, parent_id, user_id, custom_type);
+	}
 
 	vrs_send_node_subscribe(session_id, VRS_DEFAULT_PRIORITY, node_id, 0, 0);
 
@@ -384,14 +393,20 @@ static void cb_receive_user_authenticate(const uint8_t session_id,
 	int i, is_passwd_supported = 0;
 
 	/* Debug print */
-	printf("%s() username: %s, auth_methods_count: %d, methods: ",
-			__FUNCTION__, username, auth_methods_count);
-	for(i = 0; i < auth_methods_count; i++) {
-		printf("%d, ", methods[i]);
-		if(methods[i] == VRS_UA_METHOD_PASSWORD)
-			is_passwd_supported = 1;
+	if(print_debug) {
+		printf("%s() username: %s, auth_methods_count: %d, methods: ",
+				__FUNCTION__, username, auth_methods_count);
+		for(i = 0; i < auth_methods_count; i++) {
+			printf("%d, ", methods[i]);
+		}
+		printf("\n");
 	}
-	printf("\n");
+
+	for(i = 0; i < auth_methods_count; i++) {
+		if(methods[i] == VRS_UA_METHOD_PASSWORD) {
+			is_passwd_supported = 1;
+		}
+	}
 
 	/* Get username, when it is requested */
 	if(username == NULL) {
@@ -440,8 +455,10 @@ static void cb_receive_connect_accept(const uint8_t session_id,
 		const uint16_t user_id,
 		const uint32_t avatar_id)
 {
-	printf("%s() session_id: %d, user_id: %d, avatar_id: %d\n",
+	if(print_debug) {
+		printf("%s() session_id: %d, user_id: %d, avatar_id: %d\n",
 			__FUNCTION__, session_id, user_id, avatar_id);
+	}
 
 	my_avatar_id = avatar_id;
 	my_user_id = user_id;
@@ -469,36 +486,38 @@ static void cb_receive_connect_accept(const uint8_t session_id,
 static void cb_receive_connect_terminate(const uint8_t session_id,
 		const uint8_t error_num)
 {
-	printf("%s() session_id: %d, error_num: %d\n",
+	if(print_debug) {
+		printf("%s() session_id: %d, error_num: %d\n",
 			__FUNCTION__, session_id, error_num);
-	switch(error_num) {
-	case VRS_CONN_TERM_AUTH_FAILED:
-		printf("User authentication failed\n");
-		break;
-	case VRS_CONN_TERM_HOST_DOWN:
-		printf("Host is not accessible\n");
-		break;
-	case VRS_CONN_TERM_HOST_UNKNOWN:
-		printf("Host could not be found\n");
-		break;
-	case VRS_CONN_TERM_SERVER_DOWN:
-		printf("Server is not running\n");
-		break;
-	case VRS_CONN_TERM_TIMEOUT:
-		printf("Connection timeout\n");
-		break;
-	case VRS_CONN_TERM_ERROR:
-		printf("Connection with server was broken\n");
-		break;
-	case VRS_CONN_TERM_SERVER:
-		printf("Connection was terminated by server\n");
-		break;
-	case VRS_CONN_TERM_CLIENT:
-		printf("Connection was terminated by client\n");
-		break;
-	default:
-		printf("Unknown error\n");
-		break;
+		switch(error_num) {
+		case VRS_CONN_TERM_AUTH_FAILED:
+			printf("User authentication failed\n");
+			break;
+		case VRS_CONN_TERM_HOST_DOWN:
+			printf("Host is not accessible\n");
+			break;
+		case VRS_CONN_TERM_HOST_UNKNOWN:
+			printf("Host could not be found\n");
+			break;
+		case VRS_CONN_TERM_SERVER_DOWN:
+			printf("Server is not running\n");
+			break;
+		case VRS_CONN_TERM_TIMEOUT:
+			printf("Connection timeout\n");
+			break;
+		case VRS_CONN_TERM_ERROR:
+			printf("Connection with server was broken\n");
+			break;
+		case VRS_CONN_TERM_SERVER:
+			printf("Connection was terminated by server\n");
+			break;
+		case VRS_CONN_TERM_CLIENT:
+			printf("Connection was terminated by client\n");
+			break;
+		default:
+			printf("Unknown error\n");
+			break;
+		}
 	}
 	exit(EXIT_SUCCESS);
 }
@@ -508,13 +527,16 @@ static void cb_receive_connect_terminate(const uint8_t session_id,
  */
 static void print_help(char *prog_name)
 {
-	printf("\n Usage: %s -t filename server_address\n", prog_name);
+	printf("\n Usage: %s -f filename server_address\n", prog_name);
 	printf("\n");
 	printf(" This program is Verse client uploading PLY model to \n");
 	printf(" to Verse server.\n");
 	printf("\n");
 	printf(" Options:\n");
 	printf(" -f filename       Filename of PLY file.\n");
+	printf(" -d                Print debug prints.\n");
+	printf(" -u username       Username used for authentication.\n");
+	printf(" -p password       Password used for authentication.\n");
 	printf("\n");
 }
 
@@ -531,7 +553,7 @@ int main(int argc, char *argv[])
 
 	if(argc > 0) {
 		/* Parse all options */
-		while( (opt = getopt(argc, argv, "f:h")) != -1) {
+		while( (opt = getopt(argc, argv, "f:hdu:p:")) != -1) {
 			switch(opt) {
 			case 'f':
 				my_filename = strdup(optarg);
@@ -541,6 +563,15 @@ int main(int argc, char *argv[])
 				exit(EXIT_SUCCESS);
 			case ':':
 				exit(EXIT_FAILURE);
+			case 'd':
+				print_debug = 1;
+				break;
+			case 'u':
+				my_username = strdup(optarg);
+				break;
+			case 'p':
+				my_password = strdup(optarg);
+				break;
 			case '?':
 				exit(EXIT_FAILURE);
 			}
@@ -559,8 +590,6 @@ int main(int argc, char *argv[])
 
 	/* Set up server name */
 	my_verse_server = strdup(argv[optind]);
-
-	printf("server: %s, file: %s\n", my_verse_server, my_filename);
 
 	/* Handle SIGINT signal. The handle_signal function will try to terminate
 	 * connection. */
@@ -590,6 +619,8 @@ int main(int argc, char *argv[])
 
 	if(my_filename != NULL) free(my_filename);
 	if(my_verse_server != NULL) free(my_verse_server);
+	if(my_username != NULL) free(my_username);
+	if(my_password != NULL) free(my_username);
 
 	return EXIT_SUCCESS;
 }
