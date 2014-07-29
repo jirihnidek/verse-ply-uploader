@@ -92,26 +92,29 @@ static int64_t my_vertex_layer_id = -1;
 static int64_t my_face_layer_id = -1;
 
 /**
- * File path to PLY file
- */
-static char *my_filename = NULL;
-
-/**
  * Hostname of Verse server
  */
 static char *my_verse_server = NULL;
 
 /**
- * Current vertex position
+ * Number of vertices
  */
-static double vertex[3] = {0.0, 0.0, 0.0};
+static uint64_t nvertices = 0;
 
 /**
- * Indexes of current face (quat)
+ * Array of vertices
  */
-static long *face;
+static double *vertices = NULL;
 
-static long face_size = 0;
+/**
+ * Number of faces
+ */
+static uint64_t nquads = 0;
+
+/**
+ * Array of faces
+ */
+static uint64_t *quads = NULL;
 
 /**
 * \brief Callback function for handling signals.
@@ -143,15 +146,17 @@ static int vertex_cb(p_ply_argument argument)
 	switch(xyz) {
 	case 0:
 		/* printf("%ld ", *vert_num); */
-		vertex[0] = ply_get_argument_value(argument);
+		vertices[3*(*vert_num) + 0] = ply_get_argument_value(argument);
 		break;
 	case 1:
-		vertex[1] = ply_get_argument_value(argument);
+		vertices[3*(*vert_num) + 1] = ply_get_argument_value(argument);
 		break;
 	case 2:
-		vertex[2] = ply_get_argument_value(argument);
-		/* printf("(%g, %g, %g)\n", vertex[0], vertex[1], vertex[2]); */
-		vrs_send_layer_set_value(my_session_id, VRS_DEFAULT_PRIORITY, my_mesh_node_id, my_vertex_layer_id, *vert_num, VRS_VALUE_TYPE_REAL64, 3, (void*)vertex);
+		vertices[3*(*vert_num) + 2] = ply_get_argument_value(argument);
+		printf("(%g, %g, %g)\n",
+				vertices[3*(*vert_num) + 0],
+				vertices[3*(*vert_num) + 1],
+				vertices[3*(*vert_num) + 2]);
 		*vert_num = *vert_num + 1;
 		break;
 	}
@@ -166,49 +171,70 @@ static int vertex_cb(p_ply_argument argument)
 static int face_cb(p_ply_argument argument)
 {
 	long length, value_index, *face_num;
+	static int size;
+	static long face_size = 0;
 
 	ply_get_argument_user_data(argument, (void**)&face_num, NULL);
 	ply_get_argument_property(argument, NULL, &length, &value_index);
 
 	/* When first index is loaded */
 	if(value_index == 0) {
-		int size;
 		face_size = length;
 		size = (face_size < 4) ? 4 : face_size;
-		face = (long*)calloc(size, sizeof(long));
-		/* printf("%ld, %ld, ", *face_num, length); */
+		printf("%ld, %ld, ", *face_num, length);
 	}
 
-	if(face != NULL) {
-		face[value_index] = (long)ply_get_argument_value(argument);
+	if(value_index < 4) {
+		quads[4*(*face_num) + value_index] = (long)ply_get_argument_value(argument);
 	}
 
 	/* When last face index is loaded */
 	if(value_index >= 0 && value_index == (face_size - 1)) {
-		/*
 		long i;
 		printf("{");
-		for(i = 0; i < face_size; i++) {
-			if(i != (face_size - 1)) {
-				printf("%ld, ", face[i]);
+		for(i = 0; i < size; i++) {
+			if(i != (size - 1)) {
+				printf("%ld, ", quads[4*(*face_num) + i]);
 			} else {
-				printf("%ld", face[i]);
+				printf("%ld", quads[4*(*face_num) + i]);
 			}
 		}
 		printf("}\n");
-		*/
 
-		vrs_send_layer_set_value(my_session_id, VRS_DEFAULT_PRIORITY, my_mesh_node_id, my_face_layer_id, *face_num, VRS_VALUE_TYPE_UINT64, 4, (void*)face);
-
-		if(face != NULL) {
-			free(face);
-			face = NULL;
-		}
 		*face_num = *face_num + 1;
 	}
 
 	return 1;
 }
+
+
+static void upload_mesh(void)
+{
+	uint64_t vert_id, quad_id;
+
+	for(vert_id = 0; vert_id < nvertices; vert_id++ ) {
+		vrs_send_layer_set_value(my_session_id,
+				VRS_DEFAULT_PRIORITY,
+				my_mesh_node_id,
+				my_vertex_layer_id,
+				vert_id,
+				VRS_VALUE_TYPE_REAL64,
+				3,
+				(void*)&vertices[3*vert_id]);
+	}
+
+	for(quad_id = 0; quad_id < nquads; quad_id++) {
+		vrs_send_layer_set_value(my_session_id,
+				VRS_DEFAULT_PRIORITY,
+				my_mesh_node_id,
+				my_face_layer_id,
+				quad_id,
+				VRS_VALUE_TYPE_UINT64,
+				4,
+				(void*)&quads[4*quad_id]);
+	}
+}
+
 
 /**
  * @brief The callback function or command layer set_value
@@ -319,18 +345,8 @@ static void cb_receive_layer_create(const uint8_t session_id,
 	}
 
 	if(my_vertex_layer_id != -1 && my_face_layer_id != -1) {
-		long nvertices, ntriangles, vert_num = 0, face_num = 0;
-		p_ply ply;
-
-		ply = ply_open(my_filename, NULL, 0, NULL);
-		if (!ply) return;
-		if (!ply_read_header(ply)) return;
-		nvertices = ply_set_read_cb(ply, "vertex", "x", vertex_cb, &vert_num, 0);
-		ply_set_read_cb(ply, "vertex", "y", vertex_cb, &vert_num, 1);
-		ply_set_read_cb(ply, "vertex", "z", vertex_cb, &vert_num, 2);
-		ntriangles = ply_set_read_cb(ply, "face", "vertex_indices", face_cb, &face_num, 0);
-		if (!ply_read(ply)) return;
-		ply_close(ply);
+		/* Start to upload vertices and faces to Verse server */
+		upload_mesh();
 	}
 }
 
@@ -523,6 +539,39 @@ static void cb_receive_connect_terminate(const uint8_t session_id,
 }
 
 /**
+ * @brief Load vertices and faces to the memory
+ */
+static void load_ply_file(char *my_filename)
+{
+	long vert_num = 0, face_num = 0;
+	p_ply ply;
+
+	ply = ply_open(my_filename, NULL, 0, NULL);
+
+	if (!ply) return;
+
+	if (!ply_read_header(ply)) return;
+
+	nvertices = ply_set_read_cb(ply, "vertex", "x", vertex_cb, &vert_num, 0);
+	ply_set_read_cb(ply, "vertex", "y", vertex_cb, &vert_num, 1);
+	ply_set_read_cb(ply, "vertex", "z", vertex_cb, &vert_num, 2);
+	nquads = ply_set_read_cb(ply, "face", "vertex_indices", face_cb, &face_num, 0);
+
+	/* Allocate memory for vertices */
+	vertices = (double*)calloc(3*nvertices, sizeof(double));
+
+	/* Allocate memory for face indexes */
+	quads = (uint64_t*)calloc(4*nquads, sizeof(uint64_t));
+
+	printf("vertices: %ld, faces: %ld\n", nvertices, nquads);
+
+	/* Load whole file to memory */
+	if (!ply_read(ply)) return;
+
+	ply_close(ply);
+}
+
+/**
  * @brief Print help
  */
 static void print_help(char *prog_name)
@@ -551,6 +600,7 @@ int main(int argc, char *argv[])
 {
 	int error_num, opt;
 	unsigned short flags = VRS_SEC_DATA_NONE;
+	char *my_filename = NULL;
 
 	if(argc > 0) {
 		/* Parse all options */
@@ -589,6 +639,13 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 
+	if(my_filename != NULL) {
+		load_ply_file(my_filename);
+	} else {
+		print_help(argv[0]);
+		exit(EXIT_FAILURE);
+	}
+
 	/* Set up server name */
 	my_verse_server = strdup(argv[optind]);
 
@@ -622,6 +679,8 @@ int main(int argc, char *argv[])
 	if(my_verse_server != NULL) free(my_verse_server);
 	if(my_username != NULL) free(my_username);
 	if(my_password != NULL) free(my_username);
+	if(vertices != NULL) free(vertices);
+	if(quads != NULL) free(quads);
 
 	return EXIT_SUCCESS;
 }
