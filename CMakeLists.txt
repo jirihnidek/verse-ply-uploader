@@ -41,6 +41,9 @@ find_package (Verse REQUIRED)
 # Try to find RPLY package (required)
 find_package (RPLY REQUIRED)
 
+# Try to find thread (required)
+find_package (Threads REQUIRED)
+
 # Try to find OpenGL
 find_package (OpenGL)
 
@@ -48,16 +51,20 @@ find_package (OpenGL)
 find_package (GLUT)
 
 # Set source code of Verse PLY uploader
-set (verse_ply_uploader_src ./src/main.c)
+set (verse_ply_uploader_src
+    ./src/main.c
+    ./src/display_glut.c)
 
 # Include directories
 include_directories (./src)
 include_directories (${VERSE_INCLUDE_DIR})
 include_directories (${RPLY_INCLUDE_DIR})
-include_directories (${OPENGL_INCLUDE_DIR})
-include_directories (${GLUT_INCLUDE_DIR})
 
-set ( verse_ply_uploader_libs ${VERSE_LIBRARIES} ${RPLY_LIBRARIES} )
+# Basic dynamic libraries linked with
+set ( verse_ply_uploader_libs
+    ${VERSE_LIBRARIES}
+    ${RPLY_LIBRARIES}
+    ${CMAKE_THREAD_LIBS_INIT})
 
 # Make build flags compiler specific for verse_server
 if (CMAKE_COMPILER_IS_GNUCC)
@@ -68,6 +75,21 @@ if (CMAKE_COMPILER_IS_GNUCC)
 	    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DNDEBUG -O3 -fno-strict-aliasing")
 	endif ()
 endif (CMAKE_COMPILER_IS_GNUCC)
+
+# Optional library OpenGL
+if (OPENGL_FOUND)
+    include_directories (${OPENGL_INCLUDE_DIR})
+    set ( verse_ply_uploader_libs ${verse_ply_uploader_libs}
+        ${OPENGL_LIBRARIES})
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DWITH_OPENGL")
+endif ()
+
+# Optional library GLUT
+if (GLUT_FOUND)
+    include_directories (${GLUT_INCLUDE_DIR})
+    set ( verse_ply_uploader_libs ${verse_ply_uploader_libs} ${GLUT_LIBRARIES})
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DWITH_GLUT")
+endif ()
 
 # Set up dump executables
 add_executable (verse_ply_uploader ${verse_ply_uploader_src})

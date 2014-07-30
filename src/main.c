@@ -30,91 +30,50 @@
 #include <string.h>
 #include <signal.h>
 
-/* Frames per second used by this verse client */
-#define FPS 60
+#include "main.h"
+#include "display_glut.h"
 
-/* Custom type of node containing object */
-#define OBJECT_NODE_CT 125
-
-/* Custom type of node containing mesh */
-#define MESH_NODE_CT 126
-
-/* Custom type of layer containing vertexes, edges and faces */
-#define LAYER_VERTEXES_CT 0
-/* Custom type of layer containing edges */
-#define LAYER_EDGES_CT    1
-/* Custom type of layer containing faces */
-#define LAYER_QUADS_CT    2
-
-static int print_debug = 0;
-
-/* My session ID */
-static uint8_t my_session_id = -1;
+static struct CTX *ctx = NULL;
 
 /**
- * Username passed from command line
+ * @brief This function initialize context of client
+ *
+ * @param ctx
  */
-static char *my_username = NULL;
+void init_CTX(struct CTX *_ctx)
+{
+	_ctx->my_filename = NULL;
+	_ctx->print_debug = 0;
+	_ctx->my_session_id = -1;
+	_ctx->my_username  = NULL;
+	_ctx->my_password  = NULL;
+	_ctx->my_verse_server = NULL;
+	_ctx->my_user_id = -1;
+	_ctx->my_avatar_id = -1;
+	_ctx->my_object_node_id  = -1;
+	_ctx->my_mesh_node_id  = -1;
+	_ctx->my_vertex_layer_id  = -1;
+	_ctx->my_face_layer_id = -1;
+	_ctx->nvertices = 0;
+	_ctx->vertices = NULL;
+	_ctx->nquads = 0;
+	_ctx->quads = NULL;
+}
 
 /**
- * Password passed from command line
+ * @brief This function clear client context
+ *
+ * @param _ctx
  */
-static char *my_password = NULL;
-
-/**
- * ID of user used for connection to verse server
- */
-static int64_t my_user_id = -1;
-
-/**
- * ID of avatar representing this client on verse server
- */
-static int64_t my_avatar_id = -1;
-
-/**
- * ID of object node
- */
-static int64_t my_object_node_id = -1;
-
-/**
- * ID of mesh node
- */
-static int64_t my_mesh_node_id = -1;
-
-/**
- * ID of layer containing vertices
- */
-static int64_t my_vertex_layer_id = -1;
-
-/**
- * ID of layer containing faces
- */
-static int64_t my_face_layer_id = -1;
-
-/**
- * Hostname of Verse server
- */
-static char *my_verse_server = NULL;
-
-/**
- * Number of vertices
- */
-static uint64_t nvertices = 0;
-
-/**
- * Array of vertices
- */
-static double *vertices = NULL;
-
-/**
- * Number of faces
- */
-static uint64_t nquads = 0;
-
-/**
- * Array of faces
- */
-static uint64_t *quads = NULL;
+void clear_CTX(struct CTX *_ctx)
+{
+	if(_ctx->my_filename != NULL) free(_ctx->my_filename);
+	if(_ctx->my_username != NULL) free(_ctx->my_username);
+	if(_ctx->my_password != NULL) free(_ctx->my_password);
+	if(_ctx->my_verse_server != NULL) free(_ctx->my_verse_server);
+	if(_ctx->vertices != NULL) free(_ctx->vertices);
+	if(_ctx->quads != NULL) free(_ctx->quads);
+}
 
 /**
 * \brief Callback function for handling signals.
@@ -127,8 +86,8 @@ static void handle_signal(int sig)
 {
 	if(sig == SIGINT) {
 		printf("%s() try to terminate connection: %d\n",
-				__FUNCTION__, my_session_id);
-		vrs_send_connect_terminate(my_session_id);
+				__FUNCTION__, ctx->my_session_id);
+		vrs_send_connect_terminate(ctx->my_session_id);
 		/* Reset signal handling to default behavior */
 		signal(SIGINT, SIG_DFL);
 	}
@@ -146,17 +105,17 @@ static int vertex_cb(p_ply_argument argument)
 	switch(xyz) {
 	case 0:
 		/* printf("%ld ", *vert_num); */
-		vertices[3*(*vert_num) + 0] = ply_get_argument_value(argument);
+		ctx->vertices[3*(*vert_num) + 0] = ply_get_argument_value(argument);
 		break;
 	case 1:
-		vertices[3*(*vert_num) + 1] = ply_get_argument_value(argument);
+		ctx->vertices[3*(*vert_num) + 1] = ply_get_argument_value(argument);
 		break;
 	case 2:
-		vertices[3*(*vert_num) + 2] = ply_get_argument_value(argument);
+		ctx->vertices[3*(*vert_num) + 2] = ply_get_argument_value(argument);
 		printf("(%g, %g, %g)\n",
-				vertices[3*(*vert_num) + 0],
-				vertices[3*(*vert_num) + 1],
-				vertices[3*(*vert_num) + 2]);
+				ctx->vertices[3*(*vert_num) + 0],
+				ctx->vertices[3*(*vert_num) + 1],
+				ctx->vertices[3*(*vert_num) + 2]);
 		*vert_num = *vert_num + 1;
 		break;
 	}
@@ -185,7 +144,7 @@ static int face_cb(p_ply_argument argument)
 	}
 
 	if(value_index < 4) {
-		quads[4*(*face_num) + value_index] = (long)ply_get_argument_value(argument);
+		ctx->quads[4*(*face_num) + value_index] = (long)ply_get_argument_value(argument);
 	}
 
 	/* When last face index is loaded */
@@ -194,9 +153,9 @@ static int face_cb(p_ply_argument argument)
 		printf("{");
 		for(i = 0; i < size; i++) {
 			if(i != (size - 1)) {
-				printf("%ld, ", quads[4*(*face_num) + i]);
+				printf("%ld, ", ctx->quads[4*(*face_num) + i]);
 			} else {
-				printf("%ld", quads[4*(*face_num) + i]);
+				printf("%ld", ctx->quads[4*(*face_num) + i]);
 			}
 		}
 		printf("}\n");
@@ -212,26 +171,26 @@ static void upload_mesh(void)
 {
 	uint64_t vert_id, quad_id;
 
-	for(vert_id = 0; vert_id < nvertices; vert_id++ ) {
-		vrs_send_layer_set_value(my_session_id,
+	for(vert_id = 0; vert_id < ctx->nvertices; vert_id++ ) {
+		vrs_send_layer_set_value(ctx->my_session_id,
 				VRS_DEFAULT_PRIORITY,
-				my_mesh_node_id,
-				my_vertex_layer_id,
+				ctx->my_mesh_node_id,
+				ctx->my_vertex_layer_id,
 				vert_id,
 				VRS_VALUE_TYPE_REAL64,
 				3,
-				(void*)&vertices[3*vert_id]);
+				(void*)&ctx->vertices[3*vert_id]);
 	}
 
-	for(quad_id = 0; quad_id < nquads; quad_id++) {
-		vrs_send_layer_set_value(my_session_id,
+	for(quad_id = 0; quad_id < ctx->nquads; quad_id++) {
+		vrs_send_layer_set_value(ctx->my_session_id,
 				VRS_DEFAULT_PRIORITY,
-				my_mesh_node_id,
-				my_face_layer_id,
+				ctx->my_mesh_node_id,
+				ctx->my_face_layer_id,
 				quad_id,
 				VRS_VALUE_TYPE_UINT64,
 				4,
-				(void*)&quads[4*quad_id]);
+				(void*)&ctx->quads[4*quad_id]);
 	}
 }
 
@@ -257,7 +216,7 @@ static void cb_receive_layer_set_value(const uint8_t session_id,
 {
 	int i;
 
-	if(print_debug) {
+	if(ctx->print_debug) {
 		printf("%s(): session_id: %u, node_id: %u, layer_id: %d, item_id: %d, data_type: %d, count: %d, value(s): ",
 				__FUNCTION__, session_id, node_id, layer_id, item_id, data_type, count);
 
@@ -329,22 +288,22 @@ static void cb_receive_layer_create(const uint8_t session_id,
 		const uint8_t count,
 		const uint16_t custom_type)
 {
-	if(print_debug) {
+	if(ctx->print_debug) {
 		printf("%s(): session_id: %u, node_id: %u, parent_layer_id: %d, layer_id: %d, data_type: %d, count: %d, custom_type: %d\n",
 			__FUNCTION__, session_id, node_id, parent_layer_id, layer_id, data_type, count, custom_type);
 	}
 
-	if(node_id == my_mesh_node_id && custom_type == LAYER_VERTEXES_CT) {
+	if(node_id == ctx->my_mesh_node_id && custom_type == LAYER_VERTEXES_CT) {
 		vrs_send_layer_subscribe(session_id, VRS_DEFAULT_PRIORITY, node_id, layer_id, 0, 0);
-		my_vertex_layer_id = layer_id;
+		ctx->my_vertex_layer_id = layer_id;
 	}
 
-	if(node_id == my_mesh_node_id && custom_type == LAYER_QUADS_CT) {
+	if(node_id == ctx->my_mesh_node_id && custom_type == LAYER_QUADS_CT) {
 		vrs_send_layer_subscribe(session_id, VRS_DEFAULT_PRIORITY, node_id, layer_id, 0, 0);
-		my_face_layer_id = layer_id;
+		ctx->my_face_layer_id = layer_id;
 	}
 
-	if(my_vertex_layer_id != -1 && my_face_layer_id != -1) {
+	if(ctx->my_vertex_layer_id != -1 && ctx->my_face_layer_id != -1) {
 		/* Start to upload vertices and faces to Verse server */
 		upload_mesh();
 	}
@@ -364,25 +323,25 @@ static void cb_receive_node_create(const uint8_t session_id,
 		const uint16_t user_id,
 		const uint16_t custom_type)
 {
-	if(print_debug) {
+	if(ctx->print_debug) {
 		printf("%s() session_id: %d, node_id: %d, parent_id: %d, user_id: %d, custom_type: %d\n",
 			__FUNCTION__, session_id, node_id, parent_id, user_id, custom_type);
 	}
 
 	vrs_send_node_subscribe(session_id, VRS_DEFAULT_PRIORITY, node_id, 0, 0);
 
-	if(parent_id == my_avatar_id && custom_type == OBJECT_NODE_CT) {
-		my_object_node_id = node_id;
+	if(parent_id == ctx->my_avatar_id && custom_type == OBJECT_NODE_CT) {
+		ctx->my_object_node_id = node_id;
 		vrs_send_node_link(session_id, VRS_DEFAULT_PRIORITY, VRS_SCENE_PARENT_NODE_ID, node_id);
-		if(my_mesh_node_id != -1) {
-			vrs_send_node_link(session_id, VRS_DEFAULT_PRIORITY, my_object_node_id, node_id);
+		if(ctx->my_mesh_node_id != -1) {
+			vrs_send_node_link(session_id, VRS_DEFAULT_PRIORITY, ctx->my_object_node_id, node_id);
 		}
 	}
 
-	if(parent_id == my_avatar_id && custom_type == MESH_NODE_CT) {
-		my_mesh_node_id = node_id;
-		if(my_object_node_id != -1) {
-			vrs_send_node_link(session_id, VRS_DEFAULT_PRIORITY, my_object_node_id, node_id);
+	if(parent_id == ctx->my_avatar_id && custom_type == MESH_NODE_CT) {
+		ctx->my_mesh_node_id = node_id;
+		if(ctx->my_object_node_id != -1) {
+			vrs_send_node_link(session_id, VRS_DEFAULT_PRIORITY, ctx->my_object_node_id, node_id);
 		}
 		vrs_send_layer_create(session_id, VRS_DEFAULT_PRIORITY, node_id, -1, VRS_VALUE_TYPE_REAL64, 3, LAYER_VERTEXES_CT);
 		vrs_send_layer_create(session_id, VRS_DEFAULT_PRIORITY, node_id, -1, VRS_VALUE_TYPE_UINT64, 2, LAYER_EDGES_CT);
@@ -409,7 +368,7 @@ static void cb_receive_user_authenticate(const uint8_t session_id,
 	int i, is_passwd_supported = 0;
 
 	/* Debug print */
-	if(print_debug) {
+	if(ctx->print_debug) {
 		printf("%s() username: %s, auth_methods_count: %d, methods: ",
 				__FUNCTION__, username, auth_methods_count);
 		for(i = 0; i < auth_methods_count; i++) {
@@ -428,8 +387,8 @@ static void cb_receive_user_authenticate(const uint8_t session_id,
 	if(username == NULL) {
 		int ret = 0;
 		attempts = 0;	/* Reset counter of auth. attempt. */
-		if(my_username != NULL) {
-			vrs_send_user_authenticate(session_id, my_username, 0, NULL);
+		if(ctx->my_username != NULL) {
+			vrs_send_user_authenticate(session_id, ctx->my_username, 0, NULL);
 		} else {
 			printf("Username: ");
 			ret = scanf("%s", name);
@@ -444,8 +403,9 @@ static void cb_receive_user_authenticate(const uint8_t session_id,
 		if(is_passwd_supported == 1) {
 			attempts++;
 			strncpy(name, username, VRS_MAX_USERNAME_LENGTH);
-			if(my_password != NULL && attempts == 1) {
-				vrs_send_user_authenticate(session_id, name, VRS_UA_METHOD_PASSWORD, my_password);
+			if(ctx->my_password != NULL && attempts == 1) {
+				vrs_send_user_authenticate(session_id, name,
+						VRS_UA_METHOD_PASSWORD, ctx->my_password);
 			} else {
 				/* Print this warning, when previous authentication attempt failed. */
 				if(attempts > 1)
@@ -471,13 +431,13 @@ static void cb_receive_connect_accept(const uint8_t session_id,
 		const uint16_t user_id,
 		const uint32_t avatar_id)
 {
-	if(print_debug) {
+	if(ctx->print_debug) {
 		printf("%s() session_id: %d, user_id: %d, avatar_id: %d\n",
 			__FUNCTION__, session_id, user_id, avatar_id);
 	}
 
-	my_avatar_id = avatar_id;
-	my_user_id = user_id;
+	ctx->my_avatar_id = avatar_id;
+	ctx->my_user_id = user_id;
 
 	/* When client receive connect accept, then it is ready to subscribe
 	 * to the root node of the node tree. Id of root node is still 0. This
@@ -502,7 +462,7 @@ static void cb_receive_connect_accept(const uint8_t session_id,
 static void cb_receive_connect_terminate(const uint8_t session_id,
 		const uint8_t error_num)
 {
-	if(print_debug) {
+	if(ctx->print_debug) {
 		printf("%s() session_id: %d, error_num: %d\n",
 			__FUNCTION__, session_id, error_num);
 		switch(error_num) {
@@ -552,18 +512,18 @@ static void load_ply_file(char *my_filename)
 
 	if (!ply_read_header(ply)) return;
 
-	nvertices = ply_set_read_cb(ply, "vertex", "x", vertex_cb, &vert_num, 0);
+	ctx->nvertices = ply_set_read_cb(ply, "vertex", "x", vertex_cb, &vert_num, 0);
 	ply_set_read_cb(ply, "vertex", "y", vertex_cb, &vert_num, 1);
 	ply_set_read_cb(ply, "vertex", "z", vertex_cb, &vert_num, 2);
-	nquads = ply_set_read_cb(ply, "face", "vertex_indices", face_cb, &face_num, 0);
+	ctx->nquads = ply_set_read_cb(ply, "face", "vertex_indices", face_cb, &face_num, 0);
 
 	/* Allocate memory for vertices */
-	vertices = (double*)calloc(3*nvertices, sizeof(double));
+	ctx->vertices = (double*)calloc(3*ctx->nvertices, sizeof(double));
 
 	/* Allocate memory for face indexes */
-	quads = (uint64_t*)calloc(4*nquads, sizeof(uint64_t));
+	ctx->quads = (uint64_t*)calloc(4*ctx->nquads, sizeof(uint64_t));
 
-	printf("vertices: %ld, faces: %ld\n", nvertices, nquads);
+	printf("vertices: %ld, faces: %ld\n", ctx->nvertices, ctx->nquads);
 
 	/* Load whole file to memory */
 	if (!ply_read(ply)) return;
@@ -600,14 +560,19 @@ int main(int argc, char *argv[])
 {
 	int error_num, opt;
 	unsigned short flags = VRS_SEC_DATA_NONE;
-	char *my_filename = NULL;
+
+	ctx = (struct CTX*)calloc(1, sizeof(CTX));
+	if(ctx == NULL) {
+		printf("Out of memory\n");
+		exit(EXIT_FAILURE);
+	}
 
 	if(argc > 0) {
 		/* Parse all options */
 		while( (opt = getopt(argc, argv, "f:hdu:p:")) != -1) {
 			switch(opt) {
 			case 'f':
-				my_filename = strdup(optarg);
+				ctx->my_filename = strdup(optarg);
 				break;
 			case 'h':
 				print_help(argv[0]);
@@ -615,13 +580,13 @@ int main(int argc, char *argv[])
 			case ':':
 				exit(EXIT_FAILURE);
 			case 'd':
-				print_debug = 1;
+				ctx->print_debug = 1;
 				break;
 			case 'u':
-				my_username = strdup(optarg);
+				ctx->my_username = strdup(optarg);
 				break;
 			case 'p':
-				my_password = strdup(optarg);
+				ctx->my_password = strdup(optarg);
 				break;
 			case '?':
 				exit(EXIT_FAILURE);
@@ -639,15 +604,35 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 
-	if(my_filename != NULL) {
-		load_ply_file(my_filename);
+	/* Load PLY file to memory */
+	if(ctx->my_filename != NULL) {
+		load_ply_file(ctx->my_filename);
 	} else {
 		print_help(argv[0]);
 		exit(EXIT_FAILURE);
 	}
 
 	/* Set up server name */
-	my_verse_server = strdup(argv[optind]);
+	ctx->my_verse_server = strdup(argv[optind]);
+
+	ctx->argc = argc;
+	ctx->argv = argv;
+
+#if WITH_GLUT
+	/* Try to display PLY file */
+/*
+	if( pthread_create(&ctx->glut_thread, NULL, display_loop, (void*)ctx) != 0) {
+		clear_CTX(ctx);
+		exit(EXIT_FAILURE);
+	}
+*/
+#endif
+
+/*
+	while(1) {
+		sleep(1);
+	}
+*/
 
 	/* Handle SIGINT signal. The handle_signal function will try to terminate
 	 * connection. */
@@ -663,7 +648,7 @@ int main(int argc, char *argv[])
 	vrs_register_receive_layer_set_value(cb_receive_layer_set_value);
 
 	/* Send connect request to the server */
-	error_num = vrs_send_connect_request(my_verse_server, "12345", flags, &my_session_id);
+	error_num = vrs_send_connect_request(ctx->my_verse_server, "12345", flags, &ctx->my_session_id);
 	if(error_num != VRS_SUCCESS) {
 		printf("ERROR: %s\n", vrs_strerror(error_num));
 		return EXIT_FAILURE;
@@ -671,16 +656,14 @@ int main(int argc, char *argv[])
 
 	/* Never ending loop */
 	while(1) {
-		vrs_callback_update(my_session_id);
+		vrs_callback_update(ctx->my_session_id);
 		usleep(1000000/FPS);
 	}
 
-	if(my_filename != NULL) free(my_filename);
-	if(my_verse_server != NULL) free(my_verse_server);
-	if(my_username != NULL) free(my_username);
-	if(my_password != NULL) free(my_username);
-	if(vertices != NULL) free(vertices);
-	if(quads != NULL) free(quads);
+	/* TODO: pthread join */
+
+	clear_CTX(ctx);
+	free(ctx);
 
 	return EXIT_SUCCESS;
 }
